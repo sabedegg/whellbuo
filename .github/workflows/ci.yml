@@ -1,4 +1,4 @@
-name: Build PyCryptodome Termux aarch64 wheel
+              name: Build PyCryptodome Termux aarch64 wheel
 
 on:
   workflow_dispatch:
@@ -31,21 +31,23 @@ jobs:
             bash -lc '
               set -eux
 
+              export TMPDIR=$HOME/tmp
+              mkdir -p "$TMPDIR"
+              mkdir -p "$HOME/wheelhouse"
+
               pkg update -y
               pkg install -y python clang make binutils pkg-config
 
               python --version
               python -m pip install -U pip setuptools wheel build
 
-              mkdir -p /tmp/wheelhouse
-
               python -m pip wheel \
                 --no-binary=:all: \
                 --no-cache-dir \
-                --wheel-dir /tmp/wheelhouse \
+                --wheel-dir "$HOME/wheelhouse" \
                 pycryptodome==${{ github.event.inputs.pycryptodome_version }}
 
-              cp /tmp/wheelhouse/*.whl /out/
+              cp "$HOME"/wheelhouse/*.whl /out/
               chmod 666 /out/*.whl
 
               ls -lah /out
