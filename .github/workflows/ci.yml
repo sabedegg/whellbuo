@@ -1,4 +1,4 @@
-              name: Build PyCryptodome Termux aarch64 wheel
+name: Build PyCryptodome Termux aarch64 wheel
 
 on:
   workflow_dispatch:
