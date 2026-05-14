@@ -1,0 +1,50 @@
+name: Build PyCryptodome Termux aarch64 wheel
+
+on:
+  workflow_dispatch:
+    inputs:
+      pycryptodome_version:
+        description: "PyCryptodome version"
+        required: true
+        default: "3.23.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Enable QEMU for aarch64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build wheel inside Termux aarch64 Docker
+        run: |
+          mkdir -p dist
+
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/dist:/out" \
+            termux/termux-docker:aarch64 \
+            bash -lc '
+              set -eux
+
+              pkg update -y
+              pkg install -y python clang make binutils pkg-config
+
+              python --version
+              python -m pip install -U pip setuptools wheel build
+
+              python -m pip wheel \
+                --no-binary=:all: \
+                --no-cache-dir \
+                --wheel-dir /out \
+                pycryptodome==${{ github.event.inputs.pycryptodome_version }}
+
+              ls -lah /out
+            '
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pycryptodome-termux-python313-aarch64-wheel
+          path: dist/*.whl
