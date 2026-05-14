@@ -1,0 +1,60 @@
+name: Build Brotli Termux aarch64 wheel
+
+on:
+  workflow_dispatch:
+    inputs:
+      brotli_version:
+        description: "Brotli version"
+        required: true
+        default: "1.1.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Enable QEMU for aarch64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build wheel inside Termux aarch64 Docker
+        run: |
+          set -eux
+
+          mkdir -p dist
+          chmod 777 dist
+
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/dist:/out" \
+            termux/termux-docker:aarch64 \
+            bash -lc '
+              set -eux
+
+              export TMPDIR=$HOME/tmp
+              mkdir -p "$TMPDIR"
+              mkdir -p "$HOME/wheelhouse"
+
+              pkg update -y
+              pkg install -y python clang make binutils pkg-config
+
+              python --version
+              python -m pip install -U pip setuptools wheel build
+
+              python -m pip wheel \
+                --no-binary=:all: \
+                --no-cache-dir \
+                --wheel-dir "$HOME/wheelhouse" \
+                brotli==${{ github.event.inputs.brotli_version }}
+
+              cp "$HOME"/wheelhouse/*.whl /out/
+              chmod 666 /out/*.whl
+
+              ls -lah /out
+            '
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brotli-termux-python313-aarch64-wheel
+          path: dist/*.whl
