@@ -20,7 +20,10 @@ jobs:
 
       - name: Build wheel inside Termux aarch64 Docker
         run: |
+          set -eux
+
           mkdir -p dist
+          chmod 777 dist
 
           docker run --rm --platform linux/arm64 \
             -v "$PWD/dist:/out" \
@@ -34,11 +37,16 @@ jobs:
               python --version
               python -m pip install -U pip setuptools wheel build
 
+              mkdir -p /tmp/wheelhouse
+
               python -m pip wheel \
                 --no-binary=:all: \
                 --no-cache-dir \
-                --wheel-dir /out \
+                --wheel-dir /tmp/wheelhouse \
                 pycryptodome==${{ github.event.inputs.pycryptodome_version }}
+
+              cp /tmp/wheelhouse/*.whl /out/
+              chmod 666 /out/*.whl
 
               ls -lah /out
             '
