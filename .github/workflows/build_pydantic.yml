@@ -37,38 +37,35 @@ jobs:
 
               pkg update -y
 
-              # Enable TUR repo
-              pkg install -y tur-repo
-              pkg update -y
+
 
               # Force Python 3.13
               pkg install -y \
-                python3.13 \
                 clang \
                 make \
                 binutils \
                 pkg-config \
                 rust
 
-              python3.13 --version
+              python --version
 
-              PYVER=$(python3.13 -c "import sys; print(f\"{sys.version_info.major}.{sys.version_info.minor}\")")
+              PYVER=$(python -c "import sys; print(f\"{sys.version_info.major}.{sys.version_info.minor}\")")
 
               if [ "$PYVER" != "3.13" ]; then
                 echo "ERROR: Expected Python 3.13, got $PYVER"
                 exit 1
               fi
 
-              python3.13 -m ensurepip --upgrade || true
+              python -m ensurepip --upgrade || true
 
-              python3.13 -m pip install -U \
+              python -m pip install -U \
                 pip \
                 setuptools \
                 wheel \
                 build \
                 maturin
 
-              python3.13 -m pip wheel \
+              python -m pip wheel \
                 --no-binary=:all: \
                 --no-cache-dir \
                 --wheel-dir "$HOME/wheelhouse" \
