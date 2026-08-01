@@ -1,10 +1,10 @@
-name: Build Pydantic Termux aarch64 wheel
+name: Build Pydantic-Core Termux aarch64 wheel (Python 3.13)
 
 on:
   workflow_dispatch:
     inputs:
       pydantic_core_version:
-        description: "Pydantic version"
+        description: "pydantic-core version"
         required: true
         default: "2.46.4"
 
@@ -36,25 +36,55 @@ jobs:
               mkdir -p "$HOME/wheelhouse"
 
               pkg update -y
-              pkg install -y python clang make binutils pkg-config
 
-              python --version
-              python -m pip install -U pip setuptools wheel build
+              # Enable TUR repo
+              pkg install -y tur-repo
+              pkg update -y
 
-              python -m pip wheel \
+              # Force Python 3.13
+              pkg install -y \
+                python3.13 \
+                clang \
+                make \
+                binutils \
+                pkg-config \
+                rust
+
+              python3.13 --version
+
+              PYVER=$(python3.13 -c "import sys; print(f\"{sys.version_info.major}.{sys.version_info.minor}\")")
+
+              if [ "$PYVER" != "3.13" ]; then
+                echo "ERROR: Expected Python 3.13, got $PYVER"
+                exit 1
+              fi
+
+              python3.13 -m ensurepip --upgrade || true
+
+              python3.13 -m pip install -U \
+                pip \
+                setuptools \
+                wheel \
+                build \
+                maturin
+
+              python3.13 -m pip wheel \
                 --no-binary=:all: \
                 --no-cache-dir \
                 --wheel-dir "$HOME/wheelhouse" \
                 pydantic_core==${{ github.event.inputs.pydantic_core_version }}
 
+              ls -lah "$HOME/wheelhouse"
+
               cp "$HOME"/wheelhouse/*.whl /out/
               chmod 666 /out/*.whl
 
+              echo "Generated wheels:"
               ls -lah /out
             '
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: brotli-termux-python313-aarch64-wheel
+          name: pydantic-core-termux-cp313-aarch64-wheel
           path: dist/*.whl
