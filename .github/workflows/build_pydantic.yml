@@ -35,7 +35,6 @@ jobs:
               mkdir -p "$TMPDIR"
               mkdir -p "$HOME/wheelhouse"
 
-              pkg update -y
 
 
 
