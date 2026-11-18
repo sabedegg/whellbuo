@@ -1,118 +1,105 @@
-name: Build cryptography Android ARM64 CPython 3.13
+name: Build Cryptography Termux Python 3.13 ARM64
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+    inputs:
+      cryptography_version:
+        description: "Cryptography version"
+        required: true
+        default: "50.0.0"
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout TUR wheel builder
-        uses: actions/checkout@v4
+      - name: Enable QEMU for aarch64
+        uses: docker/setup-qemu-action@v3
         with:
-          repository: termux-user-repository/pypi-wheel-builder
-          ref: main
-          path: pypi-wheel-builder
+          platforms: arm64
 
-      - name: Setup build environment
-        run: |
-          set -eux
-          cd pypi-wheel-builder
-
-          ./setup-environment.sh
-
-      - name: Prepare cryptography recipe
-        run: |
-          set -eux
-
-          cd pypi-wheel-builder
-
-          mkdir -p tur-pypi-313/python3.13-cryptography
-
-          cat > tur-pypi-313/python3.13-cryptography/build.sh <<'BUILD'
-          TERMUX_PKG_HOMEPAGE=https://github.com/pyca/cryptography
-          TERMUX_PKG_DESCRIPTION="Cryptographic library for Python"
-          TERMUX_PKG_LICENSE="Apache-2.0, BSD-3-Clause"
-          TERMUX_PKG_MAINTAINER="GitHub Actions"
-          TERMUX_PKG_VERSION=50.0.0
-
-          TERMUX_PKG_SRCURL=https://github.com/pyca/cryptography/archive/refs/tags/50.0.0.tar.gz
-          TERMUX_PKG_DEPENDS="openssl, python, python-pip, libffi"
-          TERMUX_PKG_BUILD_DEPENDS="rust, clang, pkg-config"
-
-          TERMUX_PKG_PYTHON_COMMON_BUILD_DEPS="wheel"
-          TERMUX_PKG_PYTHON_CROSS_BUILD_DEPS="'maturin>=1.9,<2'"
-
-          TERMUX_PKG_BUILD_IN_SRC=true
-          TERMUX_PYTHON_VERSION=3.13
-          TERMUX_PYTHON_HOME=$TERMUX_PREFIX/lib/python${TERMUX_PYTHON_VERSION}
-
-          TERMUX_PYTHON_CROSSENV_PREFIX=$TERMUX_PKG_BUILDDIR/python${TERMUX_PYTHON_VERSION/./}-crossenv-prefix-$TERMUX_ARCH
-
-          TERMUX_PYTHON_CROSSENV_BUILDHOME=$TERMUX_PYTHON_CROSSENV_PREFIX/build/lib/python${TERMUX_PYTHON_VERSION}
-
-          TUR_AUTO_AUDIT_WHEEL=true
-          TUR_AUDIT_WHEEL_NO_LIBS=true
-          TUR_AUTO_BUILD_WHEEL=false
-          TUR_WHEEL_DIR="target/wheels"
-
-          source $TERMUX_SCRIPTDIR/common-files/tur_build_wheel.sh
-
-          termux_step_pre_configure() {
-              termux_setup_rust
-          }
-
-          termux_step_make() {
-              export CARGO_BUILD_TARGET=$CARGO_TARGET_NAME
-              export PYO3_CROSS_PYTHON_VERSION=$TERMUX_PYTHON_VERSION
-              export PYO3_CROSS_LIB_DIR=$TERMUX_PREFIX/lib
-              export PYTHONPATH=$TERMUX_PREFIX/lib/python${TERMUX_PYTHON_VERSION}/site-packages
-              export ANDROID_API_LEVEL=$TERMUX_PKG_API_LEVEL
-              export OPENSSL_DIR=$TERMUX_PREFIX
-              export OPENSSL_LIB_DIR=$TERMUX_PREFIX/lib
-              export OPENSSL_INCLUDE_DIR=$TERMUX_PREFIX/include
-              export PKG_CONFIG_ALLOW_CROSS=1
-
-              build-python -m maturin build \
-                  --target "$CARGO_BUILD_TARGET" \
-                  --release \
-                  --skip-auditwheel \
-                  --interpreter python${TERMUX_PYTHON_VERSION}
-          }
-
-          termux_step_make_install() {
-              mkdir -p "$TERMUX_PREFIX/tmp-wheel-output"
-              cp target/wheels/*.whl "$TERMUX_PREFIX/tmp-wheel-output/"
-          }
-          BUILD
-
-      - name: Build wheel
-        run: |
-          set -eux
-          cd pypi-wheel-builder
-
-          TERMUX_INSTALL_DEPS=true \
-            ./build-package.sh -a aarch64 python3.13-cryptography
-
-      - name: Collect wheels
+      - name: Build wheel inside Termux aarch64
         run: |
           set -eux
 
           mkdir -p dist
+          chmod 777 dist
 
-          find pypi-wheel-builder \
-            -type f \
-            -name 'cryptography*.whl' \
-            -exec cp -v {} dist/ \;
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/dist:/out" \
+            termux/termux-docker:aarch64 \
+            bash -lc '
+              set -eux
+
+              export TMPDIR=$HOME/tmp
+              mkdir -p "$TMPDIR"
+              mkdir -p "$HOME/wheelhouse"
+
+              # Update repository
+              pkg update -y
+              pkg upgrade -y
+
+              # Install TUR
+              pkg install -y tur-repo
+
+              # Update after adding TUR
+              pkg update -y
+
+              # Install Python 3.13 from TUR
+              pkg install -y python3.13
+
+              # Build dependencies
+              pkg install -y \
+                clang \
+                make \
+                binutils \
+                pkg-config \
+                rust \
+                openssl \
+                libffi
+
+              # Verify Python
+              python3.13 --version
+              python3.13 -c "
+              import sys
+              assert sys.version_info[:2] == (3, 13), sys.version
+              print(sys.version)
+              "
+
+              # Install Python build tools
+              python3.13 -m pip install \
+                --upgrade pip setuptools wheel
+
+              # Termux OpenSSL paths
+              export OPENSSL_DIR=$PREFIX
+              export OPENSSL_LIB_DIR=$PREFIX/lib
+              export OPENSSL_INCLUDE_DIR=$PREFIX/include
+              export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+              export CARGO_HOME=$HOME/.cargo
+
+              # Build wheel from source
+              python3.13 -m pip wheel \
+                --no-binary=:all: \
+                --no-cache-dir \
+                --wheel-dir "$HOME/wheelhouse" \
+                cryptography==${{ github.event.inputs.cryptography_version }}
+
+              # Copy artifact
+              cp "$HOME"/wheelhouse/cryptography*.whl /out/
+              chmod 666 /out/*.whl
+
+              ls -lah /out
+            '
+
+      - name: Verify wheel
+        run: |
+          set -eux
 
           ls -lah dist/
+          file dist/*.whl
 
-      - name: Upload wheel
+      - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cryptography-50.0.0-cp313-android-arm64-v8a
+          name: cryptography-${{ github.event.inputs.cryptography_version }}-cp313-termux-aarch64
           path: dist/*.whl
