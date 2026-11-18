@@ -1,3 +1,4 @@
+
 name: Build Cryptography Termux Python 3.13 ARM64
 
 on:
@@ -13,42 +14,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Enable QEMU for aarch64
+      - name: Enable QEMU for ARM64
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
-      - name: Build wheel inside Termux aarch64
+      - name: Build Cryptography wheel in Termux
+        shell: bash
+        env:
+          CRYPTO_VERSION: ${{ github.event.inputs.cryptography_version }}
         run: |
           set -eux
 
           mkdir -p dist
           chmod 777 dist
 
-          docker run --rm --platform linux/arm64 \
+          docker run --rm \
+            --platform linux/arm64 \
+            -e CRYPTO_VERSION="$CRYPTO_VERSION" \
             -v "$PWD/dist:/out" \
             termux/termux-docker:aarch64 \
             bash -lc '
               set -eux
 
-              export TMPDIR=$HOME/tmp
+              # Temporary directories
+              export TMPDIR="$HOME/tmp"
               mkdir -p "$TMPDIR"
               mkdir -p "$HOME/wheelhouse"
 
-              # Update repository
+              # Android ARM64 API level
+              export ANDROID_API_LEVEL=24
+
+              # Termux prefix
+              export PREFIX=/data/data/com.termux/files/usr
+
+              # Update Termux
               pkg update -y
               pkg upgrade -y
 
-              # Install TUR
+              # Enable TUR repository
               pkg install -y tur-repo
-
-              # Update after adding TUR
               pkg update -y
 
-              # Install Python 3.13 from TUR
+              # Install Python 3.13
               pkg install -y python3.13
 
-              # Build dependencies
+              # Native ARM64 build dependencies
               pkg install -y \
                 clang \
                 make \
@@ -58,40 +69,65 @@ jobs:
                 openssl \
                 libffi
 
-              # Install Python build tools
-              python3.13 -m pip install \
-                --upgrade pip setuptools wheel
+              # Build tools
+              python3.13 -m pip install --upgrade \
+                pip \
+                setuptools \
+                wheel
 
-              # Termux OpenSSL paths
-              export OPENSSL_DIR=$PREFIX
-              export OPENSSL_LIB_DIR=$PREFIX/lib
-              export OPENSSL_INCLUDE_DIR=$PREFIX/include
-              export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-              export CARGO_HOME=$HOME/.cargo
+              # Compiler
+              export CC=clang
+              export CXX=clang++
 
-              # Build wheel from source
+              # OpenSSL paths
+              export OPENSSL_DIR="$PREFIX"
+              export OPENSSL_LIB_DIR="$PREFIX/lib"
+              export OPENSSL_INCLUDE_DIR="$PREFIX/include"
+              export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+
+              # Rust environment
+              export CARGO_HOME="$HOME/.cargo"
+
+              # Verify architecture
+              uname -m
+              python3.13 -c "import platform; print(platform.machine())"
+              rustc --version
+              cargo --version
+              clang --version
+
+              # Build cryptography wheel
               python3.13 -m pip wheel \
-                --no-binary=:all: \
+                --no-binary=cryptography \
                 --no-cache-dir \
                 --wheel-dir "$HOME/wheelhouse" \
-                cryptography==${{ github.event.inputs.cryptography_version }}
+                "cryptography==$CRYPTO_VERSION"
 
-              # Copy artifact
+              # Copy wheel to output directory
               cp "$HOME"/wheelhouse/cryptography*.whl /out/
+
               chmod 666 /out/*.whl
 
-              ls -lah /out
+              # Verify output
+              ls -lh /out/
+              file /out/*.whl
             '
 
-      - name: Verify wheel
+      - name: Verify wheel artifact
+        shell: bash
         run: |
           set -eux
 
-          ls -lah dist/
-          file dist/*.whl
+          ls -lh dist/
 
-      - name: Upload wheel artifact
+          for wheel in dist/*.whl; do
+            test -f "$wheel"
+            file "$wheel"
+          done
+
+      - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: cryptography-${{ github.event.inputs.cryptography_version }}-cp313-termux-aarch64
+          name: cryptography-${{ github.event.inputs.cryptography_version }}-python313-termux-arm64-v8a
           path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
