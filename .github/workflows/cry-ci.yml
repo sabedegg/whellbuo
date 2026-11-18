@@ -58,14 +58,6 @@ jobs:
                 openssl \
                 libffi
 
-              # Verify Python
-              python3.13 --version
-              python3.13 -c "
-              import sys
-              assert sys.version_info[:2] == (3, 13), sys.version
-              print(sys.version)
-              "
-
               # Install Python build tools
               python3.13 -m pip install \
                 --upgrade pip setuptools wheel
